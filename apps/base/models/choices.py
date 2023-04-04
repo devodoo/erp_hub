@@ -18,3 +18,8 @@ gender = (
     ('male', "Male"),
     ('female', "Female"),
 )
+
+state = (
+    ('pending', 'Pending'),
+    ('publish', 'Publish'),
+)
