@@ -1,5 +1,6 @@
 import requests
-import json
+from django.db.models import Q
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
@@ -166,6 +167,109 @@ class EcommerceCategoryViewSet(viewsets.ModelViewSet):
                     'message': 'Brand register successful in Vtex.',
                     'state': 'publish'
                 }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    'message': 'Error',
+                    'errors': response.text
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_category_info(self, url, apikey, apitoken, category):
+        url_complete = url + "api/catalog/pvt/category/" + category
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-VTEX-API-AppKey": apikey,
+            "X-VTEX-API-AppToken": apitoken
+        }
+        try:
+            response = requests.get(url_complete, headers=headers)
+        except ConnectionError as error:
+            return Response({
+                'message': 'Error',
+                'errors': response.text
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return Response({
+                'message': 'Error',
+                'errors': response.text
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @transaction.atomic
+    def create_category(self, data, hub):
+        category_id = EcommerceCategory.objects.filter(
+            Q(vtex_id__iexact=str(data['Id']))
+        ).first()
+        if not category_id:
+            vals = {
+                'name': data['Name'],
+                'state': 'publish',
+                'platform': hub.id,
+                'vtex_id': str(data['Id']),
+                'keywords': data['Keywords'],
+                'title': data['Title'],
+                'description': data['Description'],
+                'remarketing_code': data['AdWordsRemarketingCode'],
+                # 'vtex_lomadee_campaign_code': data['LomadeeCampaignCode'],
+                'parent': data['FatherCategoryId'] if data['FatherCategoryId'] else '',
+                'global_category': data['GlobalCategoryId'],
+                'showing_storefront': data['ShowInStoreFront'],
+                'active': data['IsActive'],
+                'store_front_link': data['ActiveStoreFrontLink'],
+                'show_brand_filter': data['ShowBrandFilter'],
+                'score': data['Score'] if data['Score'] else 0,
+                'mtto': data['StockKeepingUnitSelectionMode'],
+                'has_children': data['HasChildren'],
+                'is_department': True if data['FatherCategoryId'] else False,
+            }
+            if data['FatherCategoryId']:
+                parent_id = EcommerceCategory.objects.filter(
+                    Q(vtex_id__iexact=str(data['FatherCategoryId']))
+                ).first()
+                vals['parent'] = parent_id.id if parent_id else None
+            serializer_category = self.serializer_class(data=vals)
+            if serializer_category.is_valid():
+                serializer_category.save()
+
+    def search_platform(self, data):
+        platform = EcommerceHub.objects.filter(
+            Q(platfrom__iexact=data)
+        ).first()
+        return platform
+
+    @action(detail=False, methods=['post'])
+    def get_category_vtex(self, request):
+        for value in request.data['platform']:
+            hub = self.search_platform(value)
+            url = hub.url + "/api/catalog_system/pub/category/tree/1"
+            apikey = hub.api_key
+            apitoken = hub.api_token
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-VTEX-API-AppKey": apikey,
+                "X-VTEX-API-AppToken": apitoken
+            }
+            try:
+                response = requests.get(url, headers=headers)
+            except ConnectionError as error:
+                return Response({
+                    'message': 'No existe el hub que desea eliminar',
+                    'error': error
+                }, status=status.HTTP_404_NOT_FOUND)
+            if response.status_code == 200:
+                data_to_json = response.json()
+                for data in data_to_json:
+                    data_parent = self.get_category_info(hub.url, apikey, apitoken, category=str(data['id']))
+                    self.create_category(data_parent, hub)
+                    if data['hasChildren']:
+                        for children in data['children']:
+                            data_children = self.get_category_info(hub.url, apikey, apitoken, category=str(children['id']))
+                            self.create_category(data_children, hub)
+                return Response({
+                    'message': 'Category creadas correctamente'
+                }, status=status.HTTP_200_OK)
             else:
                 return Response({
                     'message': 'Error',

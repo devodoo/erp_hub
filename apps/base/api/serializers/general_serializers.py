@@ -43,6 +43,7 @@ class EcommerceCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = EcommerceCategory
         exclude = ('state', 'created_date', 'modified_date', 'deleted_date')
+        unique_together = ('slug', 'parent',)
 
 
 class EcommerceWarehouseSerializer(serializers.ModelSerializer):
