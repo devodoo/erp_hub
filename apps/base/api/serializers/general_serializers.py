@@ -57,6 +57,11 @@ class EcommerceCountrySerializer(serializers.ModelSerializer):
         model = EcommerceCountry
         exclude = ('state', 'created_date', 'modified_date', 'deleted_date')
 
+class EcommerceCurrencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Currency
+        exclude = ('state', 'created_date', 'modified_date', 'deleted_date')
+
 
 class EcommerceStateSerializer(serializers.ModelSerializer):
     class Meta:
